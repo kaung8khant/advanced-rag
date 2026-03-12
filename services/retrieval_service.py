@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from util.chunk_json_store import (
+from stores.chunk_store import (
     attach_faiss_ids,
     extract_vectors,
     save_vectorized_chunks_json,
 )
-from util.faiss_store import search_vectors_in_faiss, store_vectors_in_faiss
+from stores.faiss_store import search_vectors_in_faiss, store_vectors_in_faiss
 
 
 def store_vectors_and_attach_faiss_ids(

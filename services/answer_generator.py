@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openai import OpenAI
+from clients.ollama_client import create_ollama_client
 
 
 def build_context_from_matches(matches: list[dict[str, Any]]) -> str:
@@ -32,7 +32,7 @@ def answer_with_ollama(
     if not cleaned:
         raise ValueError("question must be non-empty")
 
-    client = OpenAI(base_url=base_url.rstrip("/"), api_key=api_key)
+    client = create_ollama_client(base_url=base_url, api_key=api_key)
     response = client.chat.completions.create(
         model=model,
         temperature=0.0,
@@ -40,8 +40,8 @@ def answer_with_ollama(
             {
                 "role": "system",
                 "content": (
-                    "You are reviewing a candidate's resume and answering a question about their experience based on the provided context. "
                     "Answer the question using only the provided context. "
+                    "If context is insufficient, say you do not have enough information."
                 ),
             },
             {

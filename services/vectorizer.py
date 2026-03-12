@@ -3,11 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from openai import OpenAI
-
-
-def _build_client(base_url: str, api_key: str) -> OpenAI:
-    return OpenAI(base_url=base_url.rstrip("/"), api_key=api_key)
+from clients.ollama_client import create_ollama_client
 
 
 def text_to_vector(
@@ -20,7 +16,7 @@ def text_to_vector(
     if not text or not text.strip():
         raise ValueError("text must be non-empty")
 
-    client = _build_client(base_url=base_url, api_key=api_key)
+    client = create_ollama_client(base_url=base_url, api_key=api_key)
     response = client.embeddings.create(model=model, input=text)
     return response.data[0].embedding
 
@@ -32,7 +28,7 @@ def chunks_to_vectors(
     base_url: str = "http://localhost:11434/v1",
     api_key: str = "ollama",
 ) -> list[dict[str, Any]]:
-    client = _build_client(base_url=base_url, api_key=api_key)
+    client = create_ollama_client(base_url=base_url, api_key=api_key)
     results: list[dict[str, Any]] = []
 
     for idx, chunk in enumerate(chunks, start=1):

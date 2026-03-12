@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openai import OpenAI
+from clients.ollama_client import create_ollama_client
 
 
 def rewrite_query_with_ollama(
@@ -14,7 +14,7 @@ def rewrite_query_with_ollama(
     if not cleaned:
         raise ValueError("query must be non-empty")
 
-    client = OpenAI(base_url=base_url.rstrip("/"), api_key=api_key)
+    client = create_ollama_client(base_url=base_url, api_key=api_key)
     response = client.chat.completions.create(
         model=model,
         temperature=0.0,
@@ -22,10 +22,9 @@ def rewrite_query_with_ollama(
             {
                 "role": "system",
                 "content": (
-                    "You are an expert technical resume writer. Write a single, highly technical "
-                    "hypothetical resume bullet point that proves a candidate has the skills and include backend, frontend, and devops experience that the user is asking about in their query. "
-                    "requested in the user's query. Use action verbs and technical terms. "
-                    "Return ONLY the bullet point text."
+                    "Rewrite the user query for semantic retrieval. "
+                    "Keep original intent and key entities. "
+                    "Return only one rewritten query with no explanation."
                 ),
             },
             {"role": "user", "content": cleaned},

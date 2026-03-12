@@ -13,17 +13,21 @@ It supports:
 
 ## Project Structure
 
-- `main.py`: API entrypoint (`/upload`, `/ask`)
-- `util/fileExtractor.py`: PDF/Markdown text extraction + metadata enrichment
-- `util/tokenChunker.py`: chunking + token counts
-- `util/vectorizer.py`: text/chunk embedding via Ollama OpenAI-compatible API
-- `util/faiss_store.py`: store/search vectors in FAISS
-- `util/chunk_json_store.py`: chunk JSON persistence helpers
-- `util/retrieval_store.py`: retrieval orchestration (rank/filter/map)
-- `util/query_rewriter.py`: query rewrite with Ollama
-- `util/answer_generator.py`: answer generation with Ollama from retrieved context
+- `main.py`: app bootstrap + router registration
+- `api/routes.py`: FastAPI endpoints (`/upload`, `/ask`)
+- `schemas/api_schemas.py`: request/response DTOs
+- `services/rag_service.py`: upload/ask orchestration + app constants
+- `services/file_extractor.py`: PDF/Markdown text extraction + metadata enrichment
+- `services/token_chunker.py`: chunking + token counts
+- `services/vectorizer.py`: text/chunk embedding via Ollama OpenAI-compatible API
+- `services/query_rewriter.py`: query rewrite with Ollama
+- `services/answer_generator.py`: final answer generation from retrieved context
+- `services/retrieval_service.py`: retrieval orchestration (rank/filter/map)
+- `stores/faiss_store.py`: store/search vectors in FAISS
+- `stores/chunk_store.py`: chunk JSON persistence helpers
+- `clients/ollama_client.py`: shared Ollama OpenAI-compatible client factory
 
-## Constants (in `main.py`)
+## Constants (in `services/rag_service.py`)
 
 - `EMBEDDING_MODEL = "nomic-embed-text"`
 - `ANSWER_MODEL = "llama3.2:latest"`
@@ -38,7 +42,7 @@ It supports:
 
 ## Setup
 
-From `level2v2`:
+From `level3`:
 
 ```powershell
 python -m venv .venv
