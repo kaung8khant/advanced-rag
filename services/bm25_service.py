@@ -28,6 +28,7 @@ def load_bm25_chunks(chunk_store_dir: Path) -> list[dict[str, Any]]:
             if not text:
                 continue
             chunks.append({k: v for k, v in item.items() if k != "vector"})
+         
     return chunks
 
 

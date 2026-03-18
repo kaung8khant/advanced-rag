@@ -6,6 +6,16 @@ from typing import Any
 from fastapi import HTTPException, UploadFile
 from fastuuid import uuid4
 from services.answer_generator import answer_with_ollama, build_context_from_matches
+from services.bm25_service import retrieve_bm25_matches
+from services.config import (
+    ANSWER_MODEL,
+    CHUNK_STORE_DIR,
+    EMBEDDING_MODEL,
+    MIN_RETRIEVAL_SCORE,
+    RETRIEVAL_TOP_K,
+    UPLOAD_DIR,
+    VECTOR_STORE_DIR,
+)
 from services.file_extractor import extract_and_enrich_segments
 from services.query_rewriter import rewrite_query_with_ollama
 from services.retrieval_service import (
@@ -15,14 +25,6 @@ from services.retrieval_service import (
 )
 from services.token_chunker import build_chunks_from_segments
 from services.vectorizer import chunks_to_vectors, text_to_vector
-
-UPLOAD_DIR = Path("raw")
-CHUNK_STORE_DIR = Path("chunk_store")
-VECTOR_STORE_DIR = Path("vector_store")
-EMBEDDING_MODEL = "nomic-embed-text"
-ANSWER_MODEL = "llama3.2:latest"
-RETRIEVAL_TOP_K = 5
-MIN_RETRIEVAL_SCORE = 0.55
 
 
 def ensure_runtime_dirs() -> None:
@@ -92,7 +94,20 @@ def ask_question(question: str) -> tuple[int, str, list[dict[str, Any]]]:
         raise HTTPException(status_code=400, detail="question must be non-empty")
 
     rewritten = rewrite_query_with_ollama(cleaned)
-    print(rewritten)
+    print(f"Rewritten query: {rewritten}")
+    
+    # BM25 retrieval
+    bm25_matches = retrieve_bm25_matches(
+        rewritten,
+        top_k=RETRIEVAL_TOP_K,
+        chunk_store_dir=CHUNK_STORE_DIR,
+        min_score=0.0,
+    )
+    print(f"\n=== BM25 Results (top {len(bm25_matches)}) ===")
+    for match in bm25_matches:
+        print(f"  k={match.get('k')}, score={match.get('score'):.4f}, text={match.get('chunk', {}).get('text', '')[:100]}...")
+    
+    # FAISS retrieval
     vector = text_to_vector(rewritten, model=EMBEDDING_MODEL)
     ranked_matches = retrieve_ranked_matches(
         vector,
@@ -101,6 +116,7 @@ def ask_question(question: str) -> tuple[int, str, list[dict[str, Any]]]:
         vector_store_dir=VECTOR_STORE_DIR,
         chunk_store_dir=CHUNK_STORE_DIR,
     )
+
     context = build_context_from_matches(ranked_matches)
     answer = answer_with_ollama(cleaned, context=context, model=ANSWER_MODEL)
     return RETRIEVAL_TOP_K, answer, ranked_matches

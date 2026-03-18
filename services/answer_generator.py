@@ -24,7 +24,7 @@ def answer_with_ollama(
     question: str,
     *,
     context: str,
-    model: str = "llama3.2:latest",
+    model: str = "llama3.1:8b",
     base_url: str = "http://localhost:11434/v1",
     api_key: str = "ollama",
 ) -> str:

@@ -10,6 +10,9 @@ from services.rag_service import ask_question, upload_document
 
 router = APIRouter()
 
+@router.get("/")
+async def root() -> dict[str, str]:
+    return {"message": "Welcome to the RAG API! Use /upload to upload documents and /ask to ask questions."}
 
 @router.post("/upload", response_model=ExtractTextResponseDTO)
 async def upload_file(
