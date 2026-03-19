@@ -1,48 +1,87 @@
-# Advanced rag
+# Advanced RAG
 
-`basic rag` is a minimal Retrieval-Augmented Generation (RAG) app built with FastAPI, Ollama, and FAISS.
+`advanced-rag` is a FastAPI-based Retrieval-Augmented Generation app using Ollama, FAISS, BM25, and a Hugging Face reranker.
 
 It supports:
 - uploading `.pdf` / `.md` / `.markdown` files
-- chunking text with token windows + overlap
+- extracting and chunking document text
 - embedding chunks with Ollama embeddings
 - storing vectors in FAISS
-- query rewriting before retrieval
-- retrieving top chunks for a question
+- multi-query semantic retrieval
+- BM25 keyword retrieval
+- merging and deduplicating retrieval results
+- reranking merged candidates with a Hugging Face cross-encoder
 - generating a final answer with an Ollama chat model
+
+## Current Pipeline
+
+`POST /upload`
+1. Save uploaded file to `raw/`
+2. Extract text and metadata
+3. Build token chunks
+4. Embed chunks with `nomic-embed-text`
+5. Store vectors in FAISS
+6. Save chunk metadata with `faiss_id` into `chunk_store/`
+
+`POST /ask`
+1. Generate multiple query variants for semantic retrieval
+2. Retrieve semantic matches from FAISS
+3. Retrieve lexical matches with BM25
+4. Merge and deduplicate matches
+5. Rerank merged matches with `BAAI/bge-reranker-base`
+6. Build context from the reranked top `RETRIEVAL_TOP_K`
+7. Generate an answer with the Ollama answer model
 
 ## Project Structure
 
-- `main.py`: app bootstrap + router registration
-- `api/routes.py`: FastAPI endpoints (`/upload`, `/ask`)
-- `schemas/api_schemas.py`: request/response DTOs
-- `services/rag_service.py`: upload/ask orchestration + app constants
-- `services/file_extractor.py`: PDF/Markdown text extraction + metadata enrichment
-- `services/token_chunker.py`: chunking + token counts
-- `services/vectorizer.py`: text/chunk embedding via Ollama OpenAI-compatible API
-- `services/query_rewriter.py`: query rewrite with Ollama
-- `services/answer_generator.py`: final answer generation from retrieved context
-- `services/retrieval_service.py`: retrieval orchestration (rank/filter/map)
-- `stores/faiss_store.py`: store/search vectors in FAISS
-- `stores/chunk_store.py`: chunk JSON persistence helpers
-- `clients/ollama_client.py`: shared Ollama OpenAI-compatible client factory
+- `main.py`: FastAPI app bootstrap
+- `api/routes.py`: HTTP routes for `/upload` and `/ask`
+- `schemas/api_schemas.py`: request and response DTOs
+- `clients/ollama_client.py`: shared Ollama OpenAI-compatible client
+- `services/rag_service.py`: upload flow, retrieval merge, rerank, and answer orchestration
+- `services/file_extractor.py`: PDF/Markdown extraction and metadata enrichment
+- `services/token_chunker.py`: chunk building
+- `services/vectorizer.py`: embedding calls through Ollama
+- `services/multi_query_retriever.py`: multi-query semantic retrieval
+- `services/bm25_service.py`: BM25 retrieval over stored chunks
+- `services/reranker.py`: Hugging Face cross-encoder reranking
+- `services/answer_generator.py`: context building and final answer generation
+- `services/retrieval_service.py`: FAISS retrieval mapping and persistence helpers
+- `stores/faiss_store.py`: FAISS write/search helpers
+- `stores/chunk_store.py`: chunk JSON helpers
 
-## Constants (in `services/rag_service.py`)
+## Configuration
 
-- `EMBEDDING_MODEL = "nomic-embed-text"`
-- `ANSWER_MODEL = "llama3.2:latest"`
-- `RETRIEVAL_TOP_K = 5`
-- `MIN_RETRIEVAL_SCORE = 0.55`
+Configuration is loaded from `.env`.
+
+Current environment variables:
+- `UPLOAD_DIR=raw`
+- `CHUNK_STORE_DIR=chunk_store`
+- `VECTOR_STORE_DIR=vector_store`
+- `EMBEDDING_MODEL=nomic-embed-text`
+- `ANSWER_MODEL=deepseek-r1:1.5b`
+- `RERANKING_MODEL=BAAI/bge-reranker-base`
+- `RETRIEVAL_TOP_K=5`
+- `MIN_RETRIEVAL_SCORE=0.55`
+- `MULTI_QUERY_COUNT=3`
 
 ## Data Folders
 
-- `raw/`: uploaded files
-- `vector_store/`: FAISS index file (`index.faiss`)
-- `chunk_store/`: vectorized chunks saved as JSON (includes `faiss_id`)
+- `raw/`: uploaded source files
+- `chunk_store/`: stored chunk metadata JSON files
+- `vector_store/`: FAISS index data
+
+These are runtime artifacts and should generally not be committed.
 
 ## Setup
 
-From `level3`:
+Using `uv`:
+
+```powershell
+uv sync
+```
+
+Or with a virtual environment and pip:
 
 ```powershell
 python -m venv .venv
@@ -50,37 +89,40 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Start Ollama and ensure models are available:
+Start Ollama and pull the required models:
 
 ```powershell
 ollama serve
 ollama pull nomic-embed-text
-ollama pull llama3.2:latest
+ollama pull deepseek-r1:1.5b
 ```
 
-Run API:
+Run the API:
+
+```powershell
+uv run uvicorn main:app --reload
+```
+
+Or if using the virtual environment directly:
 
 ```powershell
 uvicorn main:app --reload
 ```
 
-## API Endpoints
+## API
 
 ### `POST /upload`
 
-Uploads a file and indexes its chunks.
+Uploads and indexes a file.
 
 Form-data:
-- `file`: file upload (`.pdf`, `.md`, `.markdown`)
-- `owner_id` (optional): default `"1"`
+- `file`: `.pdf`, `.md`, or `.markdown`
+- `owner_id`: optional, defaults to `"1"`
 
-What it does:
-1. Extracts text segments
-2. Builds chunks (`chunk_size=300`, `token_overlap=50`)
-3. Embeds each chunk
-4. Stores vectors in FAISS
-5. Attaches returned `faiss_id` to each chunk
-6. Saves chunk JSON to `chunk_store/<doc_id>.json`
+Response includes:
+- `message`
+- `extracted_text`
+- `token_chunks`
 
 ### `POST /ask`
 
@@ -92,32 +134,32 @@ Request body:
 }
 ```
 
-What it does:
-1. Rewrites query for retrieval
-2. Embeds rewritten query
-3. Searches FAISS
-4. Filters by score threshold (`>= MIN_RETRIEVAL_SCORE`)
-5. Ranks and returns top matches (`RETRIEVAL_TOP_K`)
-6. Builds context from matches
-7. Generates final answer with Ollama LLM
-
 Response includes:
 - `question`
 - `top_k`
 - `answer`
-- `matches` (ranked chunks with `k`, `faiss_id`, `score`, `chunk`)
+- `matches`
+
+Each returned match may include:
+- `k`
+- `faiss_id`
+- `score`
+- `rerank_score`
+- `retrieval_method`
+- `matched_queries`
+- `chunk`
 
 ## Notes
 
-- FAISS layer stores vectors only.
-- Chunk metadata + `faiss_id` are stored in JSON files under `chunk_store/`.
-- If you want a clean reset, remove and recreate `raw/`, `vector_store/`, and `chunk_store/`.
+- Multi-query retrieval is used for semantic recall.
+- BM25 is used for lexical recall.
+- The reranker decides the final top results returned to the LLM.
+- The current answer step uses only the reranked top `RETRIEVAL_TOP_K` matches as context.
+- If you want a clean reset, remove generated contents from `raw/`, `chunk_store/`, and `vector_store/`.
 
 ## Limitations
 
-- Query-document asymmetry:
-  Query text is short and user-style, while document chunks are longer and domain-specific. Even with query rewriting, semantic mismatch can still reduce recall.
-- Query rewriting risk:
-  Rewriting can drift from original intent in edge cases and may retrieve less relevant chunks.
-- No reranker:
-  Retrieval currently depends on embedding similarity + score threshold only.
+- There is no automated evaluation suite yet.
+- Retrieval quality still depends heavily on chunk quality and source document structure.
+- Multi-query generation depends on Ollama availability.
+- The final answer quality depends on both retrieval quality and the answer model.

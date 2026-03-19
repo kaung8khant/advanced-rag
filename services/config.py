@@ -51,3 +51,5 @@ ANSWER_MODEL = os.getenv("ANSWER_MODEL", "llama3.1:8b")
 RETRIEVAL_TOP_K = _get_int("RETRIEVAL_TOP_K", 5)
 MIN_RETRIEVAL_SCORE = _get_float("MIN_RETRIEVAL_SCORE", 0.55)
 MULTI_QUERY_COUNT = _get_int("MULTI_QUERY_COUNT", 3)
+
+RERANKING_MODEL = os.getenv("RERANKING_MODEL", "BAAI/bge-reranker-base")

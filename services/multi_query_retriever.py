@@ -4,8 +4,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from openai import APIConnectionError, APIError
+
 from clients.ollama_client import create_ollama_client
 from services.config import (
+    ANSWER_MODEL,
     CHUNK_STORE_DIR,
     EMBEDDING_MODEL,
     MIN_RETRIEVAL_SCORE,
@@ -20,7 +23,7 @@ from services.vectorizer import text_to_vector
 def generate_multi_queries_with_ollama(
     question: str,
     *,
-    model: str = "llama3.1:8b",
+    model: str = ANSWER_MODEL,
     base_url: str = "http://localhost:11434/v1",
     api_key: str = "ollama",
     num_queries: int = 3,
@@ -30,21 +33,24 @@ def generate_multi_queries_with_ollama(
         raise ValueError("question must be non-empty")
 
     client = create_ollama_client(base_url=base_url, api_key=api_key)
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0.0,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Generate alternative search queries for retrieval. "
-                    f"Return exactly {num_queries} queries as a JSON array of strings. "
-                    "Keep entities and intent unchanged. No extra text."
-                ),
-            },
-            {"role": "user", "content": cleaned},
-        ],
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate alternative search queries for retrieval. "
+                        f"Return exactly {num_queries} queries as a JSON array of strings. "
+                        "Keep entities and intent unchanged. No extra text."
+                    ),
+                },
+                {"role": "user", "content": cleaned},
+            ],
+        )
+    except (APIConnectionError, APIError):
+        return [cleaned]
 
     content = (response.choices[0].message.content or "").strip()
     if not content:
@@ -82,7 +88,7 @@ def retrieve_multi_query_matches(
         cleaned, num_queries=num_queries
     )
     all_queries = [cleaned, *generated_queries]
-
+    print(f"Generated {len(generated_queries)} multi-queries: {generated_queries}")
     seen_queries: set[str] = set()
     unique_queries: list[str] = []
     for query in all_queries:
@@ -98,7 +104,10 @@ def retrieve_multi_query_matches(
     each_top_k = per_query_top_k or top_k
     merged: dict[int, dict[str, Any]] = {}
     for query in unique_queries:
-        vector = text_to_vector(query, model=embedding_model)
+        try:
+            vector = text_to_vector(query, model=embedding_model)
+        except (APIConnectionError, APIError):
+            return []
         query_matches = retrieve_ranked_matches(
             vector,
             top_k=each_top_k,
@@ -127,8 +136,10 @@ def retrieve_multi_query_matches(
             if query not in existing["matched_queries"]:
                 existing["matched_queries"].append(query)
 
-    ranked = sorted(merged.values(), key=lambda item: float(item["score"]), reverse=True)
+    ranked = sorted(
+        merged.values(), key=lambda item: float(item["score"]), reverse=True
+    )
     output: list[dict[str, Any]] = []
-    for idx, item in enumerate(ranked[:top_k], start=1):
+    for idx, item in enumerate(ranked, start=1):
         output.append({"k": idx, **item})
     return output

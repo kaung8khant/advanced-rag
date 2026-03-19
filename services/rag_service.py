@@ -8,23 +8,79 @@ from fastuuid import uuid4
 from services.answer_generator import answer_with_ollama, build_context_from_matches
 from services.bm25_service import retrieve_bm25_matches
 from services.config import (
-    ANSWER_MODEL,
     CHUNK_STORE_DIR,
-    EMBEDDING_MODEL,
-    MIN_RETRIEVAL_SCORE,
+    RERANKING_MODEL,
     RETRIEVAL_TOP_K,
     UPLOAD_DIR,
     VECTOR_STORE_DIR,
 )
 from services.file_extractor import extract_and_enrich_segments
-from services.query_rewriter import rewrite_query_with_ollama
 from services.retrieval_service import (
-    retrieve_ranked_matches,
     store_chunks_json,
     store_vectors_and_attach_faiss_ids,
 )
+from services.reranker import rerank_matches
 from services.token_chunker import build_chunks_from_segments
-from services.vectorizer import chunks_to_vectors, text_to_vector
+from services.vectorizer import chunks_to_vectors
+from services.multi_query_retriever import retrieve_multi_query_matches
+
+
+def merge_retrieval_matches(
+    *match_groups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged_matches: dict[str, dict[str, Any]] = {}
+
+    for match_group in match_groups:
+        for match in match_group:
+            chunk = match.get("chunk", {})
+            faiss_id = match.get("faiss_id")
+            key = str(faiss_id) if faiss_id is not None else ""
+            if not key:
+                key = str(chunk.get("chunk_id", "")).strip()
+            if not key:
+                key = str(chunk.get("text", "")).strip()
+            if not key:
+                continue
+
+            retrieval_method = str(match.get("retrieval_method", "")).strip()
+            existing = merged_matches.get(key)
+            if existing is None:
+                merged_matches[key] = {
+                    **match,
+                    "retrieval_method": retrieval_method or "unknown",
+                }
+                continue
+
+            if float(match.get("score", 0.0)) > float(existing.get("score", 0.0)):
+                existing["score"] = match["score"]
+                existing["chunk"] = chunk
+
+            methods = {
+                item
+                for item in [
+                    str(existing.get("retrieval_method", "")).strip(),
+                    retrieval_method,
+                ]
+                if item
+            }
+            existing["retrieval_method"] = "+".join(sorted(methods))
+
+            existing_queries = existing.get("matched_queries")
+            incoming_queries = match.get("matched_queries")
+            if isinstance(existing_queries, list) and isinstance(incoming_queries, list):
+                for query in incoming_queries:
+                    if query not in existing_queries:
+                        existing_queries.append(query)
+
+    ranked_matches = sorted(
+        merged_matches.values(),
+        key=lambda item: float(item.get("score", 0.0)),
+        reverse=True,
+    )
+    return [
+        {**item, "k": idx}
+        for idx, item in enumerate(ranked_matches, start=1)
+    ]
 
 
 def ensure_runtime_dirs() -> None:
@@ -82,9 +138,7 @@ async def upload_document(
     response_chunks = [
         {k: v for k, v in c.items() if k != "vector"} for c in chunks_with_faiss_ids
     ]
-    message = (
-        f"File uploaded successfully.  {file_info['filename']} as {file_info['saved_as']}"
-    )
+    message = f"File uploaded successfully.  {file_info['filename']} as {file_info['saved_as']}"
     return message, extracted_value, response_chunks
 
 
@@ -93,30 +147,27 @@ def ask_question(question: str) -> tuple[int, str, list[dict[str, Any]]]:
     if not cleaned:
         raise HTTPException(status_code=400, detail="question must be non-empty")
 
-    rewritten = rewrite_query_with_ollama(cleaned)
-    print(f"Rewritten query: {rewritten}")
-    
-    # BM25 retrieval
+    multi_query_matches = retrieve_multi_query_matches(cleaned, num_queries=5)
+    # rewritten = rewrite_query_with_ollama(cleaned)
+    # print(f"Rewritten query: {rewritten}")
+
     bm25_matches = retrieve_bm25_matches(
-        rewritten,
+        cleaned,
         top_k=RETRIEVAL_TOP_K,
         chunk_store_dir=CHUNK_STORE_DIR,
         min_score=0.0,
     )
-    print(f"\n=== BM25 Results (top {len(bm25_matches)}) ===")
-    for match in bm25_matches:
-        print(f"  k={match.get('k')}, score={match.get('score'):.4f}, text={match.get('chunk', {}).get('text', '')[:100]}...")
-    
-    # FAISS retrieval
-    vector = text_to_vector(rewritten, model=EMBEDDING_MODEL)
-    ranked_matches = retrieve_ranked_matches(
-        vector,
-        top_k=RETRIEVAL_TOP_K,
-        min_score=MIN_RETRIEVAL_SCORE,
-        vector_store_dir=VECTOR_STORE_DIR,
-        chunk_store_dir=CHUNK_STORE_DIR,
-    )
 
-    context = build_context_from_matches(ranked_matches)
-    answer = answer_with_ollama(cleaned, context=context, model=ANSWER_MODEL)
-    return RETRIEVAL_TOP_K, answer, ranked_matches
+    merged_matches = merge_retrieval_matches(multi_query_matches, bm25_matches)
+    final_matches = rerank_matches(
+        cleaned,
+        merged_matches,
+        model=RERANKING_MODEL,
+        top_k=RETRIEVAL_TOP_K,
+    )
+    if not final_matches:
+        return RETRIEVAL_TOP_K, "No relevant context was found.", []
+
+    context = build_context_from_matches(final_matches)
+    answer = answer_with_ollama(cleaned, context=context)
+    return RETRIEVAL_TOP_K, answer, final_matches
