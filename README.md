@@ -13,6 +13,8 @@ It supports:
 - reranking merged candidates with a Hugging Face cross-encoder
 - generating a final answer with an Ollama chat model
 
+<img width="689" height="702" alt="Screenshot 2026-03-24 at 9 25 25 AM" src="https://github.com/user-attachments/assets/f4fad685-151c-47cc-84c8-e78b7ddb81d3" />
+
 ## Current Pipeline
 
 `POST /upload`
