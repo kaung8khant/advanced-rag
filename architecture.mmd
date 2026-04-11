@@ -1,0 +1,19 @@
+%%{init: {"flowchart": {"nodeSpacing": 16, "rankSpacing": 18, "curve": "linear"}}}%%
+flowchart LR
+    q1["1. Raw query"]
+    q2["2. Rewrite / multi-query output"]
+    q3["3. Vector top N"]
+    q4["4. BM25 top N"]
+    q5["5. Merged + deduped list"]
+    q6["6. Reranked list"]
+    q7["7. Final context sent to LLM"]
+    q8["8. Final answer"]
+
+    q1 --> q2
+    q1 --> q4
+    q2 --> q3
+    q3 --> q5
+    q4 --> q5
+    q5 --> q6
+    q6 --> q7
+    q7 --> q8

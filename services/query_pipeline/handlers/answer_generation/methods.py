@@ -5,15 +5,7 @@ from typing import Any
 from openai import APIConnectionError, APIError
 
 from clients.ollama_client import create_ollama_client
-from services.config import (
-    ANSWER_MODEL,
-    CHUNK_STORE_DIR,
-    EMBEDDING_MODEL,
-    MIN_RETRIEVAL_SCORE,
-    RETRIEVAL_TOP_K,
-    UPLOAD_DIR,
-    VECTOR_STORE_DIR,
-)
+from services.config import ANSWER_MODEL
 
 
 def build_context_from_matches(matches: list[dict[str, Any]]) -> str:
@@ -69,3 +61,4 @@ def answer_with_ollama(
     if not answer:
         return "The model returned an empty answer."
     return answer
+

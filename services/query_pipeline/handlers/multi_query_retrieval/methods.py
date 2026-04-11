@@ -79,13 +79,13 @@ def retrieve_multi_query_matches(
     num_queries: int = MULTI_QUERY_COUNT,
     per_query_top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Run multi-query semantic retrieval and return one merged ranked result list."""
     cleaned = question.strip()
     if not cleaned:
         return []
 
     generated_queries = generate_multi_queries_with_ollama(
-        cleaned, num_queries=num_queries
+        cleaned,
+        num_queries=num_queries,
     )
     all_queries = [cleaned, *generated_queries]
     print(f"Generated {len(generated_queries)} multi-queries: {generated_queries}")
@@ -137,9 +137,12 @@ def retrieve_multi_query_matches(
                 existing["matched_queries"].append(query)
 
     ranked = sorted(
-        merged.values(), key=lambda item: float(item["score"]), reverse=True
+        merged.values(),
+        key=lambda item: float(item["score"]),
+        reverse=True,
     )
     output: list[dict[str, Any]] = []
     for idx, item in enumerate(ranked, start=1):
         output.append({"k": idx, **item})
     return output
+
